@@ -1,0 +1,42 @@
+name: Collect QQQ options snapshot
+
+on:
+  schedule:
+    # Every 30 minutes, 13:30-20:00 UTC, Mon-Fri.
+    # That covers roughly 9:30am-4:00pm ET. UTC offset shifts with US
+    # daylight saving (EST vs EDT) by an hour -- this window is set a
+    # little wide on both ends to absorb that rather than needing two
+    # separate cron schedules for summer/winter.
+    - cron: '0,30 13-20 * * 1-5'
+  workflow_dispatch: {}   # lets you trigger it manually from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install yfinance
+
+      - name: Run collector
+        run: python3 collect_qqq_snapshot.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "snapshot-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add snapshots/
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Update QQQ snapshot $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi

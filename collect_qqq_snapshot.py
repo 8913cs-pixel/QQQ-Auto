@@ -38,6 +38,23 @@ OUT_DIR = "snapshots"
 MAX_EXPIRATIONS = 20
 
 
+def safe_float(v, default=0.0):
+    """Convert to float, treating NaN/None/unparseable values as `default`.
+    `x or 0` does NOT catch NaN (NaN is truthy in Python), which is what
+    caused int(NaN) crashes on illiquid contracts with missing volume/OI."""
+    try:
+        f = float(v)
+        if f != f:  # NaN check (NaN is the only value that isn't equal to itself)
+            return default
+        return f
+    except (TypeError, ValueError):
+        return default
+
+
+def safe_int(v, default=0):
+    return int(safe_float(v, default))
+
+
 def fetch_snapshot():
     tk = yf.Ticker(TICKER)
 
@@ -58,13 +75,13 @@ def fetch_snapshot():
                 chain_rows.append({
                     "expiration": exp,
                     "type": opt_type,
-                    "strike": float(row.get("strike", 0) or 0),
-                    "bid": float(row.get("bid", 0) or 0),
-                    "ask": float(row.get("ask", 0) or 0),
-                    "last": float(row.get("lastPrice", 0) or 0),
-                    "iv": float(row.get("impliedVolatility", 0) or 0),
-                    "volume": int(row.get("volume", 0) or 0),
-                    "openInterest": int(row.get("openInterest", 0) or 0),
+                    "strike": safe_float(row.get("strike")),
+                    "bid": safe_float(row.get("bid")),
+                    "ask": safe_float(row.get("ask")),
+                    "last": safe_float(row.get("lastPrice")),
+                    "iv": safe_float(row.get("impliedVolatility")),
+                    "volume": safe_int(row.get("volume")),
+                    "openInterest": safe_int(row.get("openInterest")),
                 })
 
     return {

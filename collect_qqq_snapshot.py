@@ -3,11 +3,10 @@
 QQQ Options Chain Snapshot Collector (GitHub Actions edition)
 ---------------------------------------------------------------
 Pulls the full QQQ options chain from Yahoo Finance via yfinance and writes
-one dated JSON snapshot into snapshots/, overwriting today's file each time
-it's run (so if this runs every 30 minutes, today's file just gets fresher
-until market close -- you still get one file per calendar day for the
-backtester, same as before). It also regenerates snapshots/index.json, a
-plain list of available dates, so the website knows what's new.
+a new JSON snapshot into snapshots/ on every run -- nothing gets overwritten,
+so running this every 30 minutes builds up a full intraday history. It also
+regenerates snapshots/index.json, a plain list of available snapshot IDs, so
+the website knows what's new.
 
 Designed to be run by .github/workflows/collect-snapshot.yml on a schedule,
 but you can still run it manually:
@@ -16,7 +15,7 @@ but you can still run it manually:
     python3 collect_qqq_snapshot.py
 
 Output:
-    snapshots/qqq_YYYY-MM-DD.json
+    snapshots/qqq_YYYY-MM-DDTHH-MM.json   (one per run)
     snapshots/index.json
 """
 
@@ -84,38 +83,41 @@ def fetch_snapshot():
                     "openInterest": safe_int(row.get("openInterest")),
                 })
 
+    now = datetime.now()
     return {
         "ticker": TICKER,
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "timestamp": datetime.now().isoformat(),
+        "date": now.strftime("%Y-%m-%dT%H:%M"),   # unique per run -- e.g. 2026-07-18T14:30
+        "timestamp": now.isoformat(),
         "spot": spot,
         "chain": chain_rows,
     }
 
 
 def rebuild_index():
-    """List every qqq_YYYY-MM-DD.json file in OUT_DIR, sorted, as index.json."""
-    dates = []
+    """List every qqq_*.json file in OUT_DIR, sorted, as index.json."""
+    stems = []
     for fname in os.listdir(OUT_DIR):
         if fname.startswith("qqq_") and fname.endswith(".json") and fname != "index.json":
-            dates.append(fname[len("qqq_"):-len(".json")])
-    dates.sort()
+            stems.append(fname[len("qqq_"):-len(".json")])
+    stems.sort()
     with open(os.path.join(OUT_DIR, "index.json"), "w") as f:
-        json.dump(dates, f, indent=2)
-    return dates
+        json.dump(stems, f, indent=2)
+    return stems
 
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     snapshot = fetch_snapshot()
-    filename = os.path.join(OUT_DIR, f"qqq_{snapshot['date']}.json")
+    # filesystem-safe stem: colons aren't allowed in filenames on some systems
+    stem = snapshot["date"].replace(":", "-")
+    filename = os.path.join(OUT_DIR, f"qqq_{stem}.json")
     with open(filename, "w") as f:
         json.dump(snapshot, f, indent=2)
-    dates = rebuild_index()
+    stems = rebuild_index()
     print(f"Saved {filename}  (spot={snapshot['spot']:.2f}, "
           f"{len(snapshot['chain'])} contracts across "
           f"{len(set(r['expiration'] for r in snapshot['chain']))} expirations)")
-    print(f"Index now lists {len(dates)} date(s): {dates}")
+    print(f"Index now lists {len(stems)} snapshot(s)")
 
 
 if __name__ == "__main__":

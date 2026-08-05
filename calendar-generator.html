@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendar Generator — QQQ Triple Calendar</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  * { box-sizing: border-box; margin:0; padding:0; }
+  body { background:#14171A; color:#E9E6DE; font-family:'Inter',system-ui,sans-serif; min-height:100vh; }
+  .mono { font-family:'IBM Plex Mono',monospace; }
+  .display { font-family:'Space Grotesk',sans-serif; }
+  a { color:inherit; }
+  #topnav { display:flex; align-items:center; gap:18px; padding:14px 24px; border-bottom:1px solid #2A2F35; }
+  #topnav .brand { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; }
+  #topnav a.navlink { font-size:13px; color:#8B9099; padding:6px 10px; border-radius:6px; text-decoration:none; }
+  #topnav a.navlink.active, #topnav a.navlink:hover { color:#E9E6DE; background:#1D2126; }
+  #topnav .spacer { flex:1; }
+  #topnav .spot { font-family:'IBM Plex Mono',monospace; font-size:13px; color:#8B9099; }
+  #main { max-width:1100px; margin:0 auto; padding:24px; }
+  .card { background:#1A1D21; border:1px solid #2A2F35; border-radius:10px; }
+  .eyebrow { font-size:10.5px; letter-spacing:1.5px; color:#C9A227; font-weight:600; margin-bottom:6px; }
+  .h1 { font-size:22px; font-weight:700; margin-bottom:4px; }
+  .desc { font-size:13px; color:#8B9099; line-height:1.55; margin-bottom:18px; }
+  .section-label { font-size:10.5px; letter-spacing:1.5px; color:#8B9099; font-weight:600; margin:20px 0 10px; }
+  select, input[type=number], input[type=text] { background:#14171A; border:1px solid #2A2F35; color:#E9E6DE; border-radius:6px; padding:8px 10px; font-family:'IBM Plex Mono',monospace; font-size:13px; }
+  select:focus, input:focus { outline:none; border-color:#C9A227; }
+  button.primary { background:#C9A227; color:#14171A; font-weight:600; border:none; border-radius:7px; padding:9px 16px; cursor:pointer; font-size:13.5px; }
+  button.primary:hover { background:#DCB53A; }
+  button.ghost { background:transparent; border:1px solid #2A2F35; color:#8B9099; border-radius:7px; padding:8px 13px; cursor:pointer; font-size:12.5px; }
+  button.ghost:hover { border-color:#4C7A8A; color:#E9E6DE; }
+  button.ghost.active { border-color:#C9A227; color:#E9E6DE; }
+  .field-label { font-size:10px; color:#8B9099; margin-bottom:4px; letter-spacing:.5px; }
+  .row-line { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; }
+  .empty { padding:22px; text-align:center; color:#8B9099; font-size:13px; }
+  .ladder-row { display:flex; align-items:center; padding:8px 14px; border-top:1px solid #2A2F35; font-size:12.5px; }
+  .ladder-row:first-child { border-top:none; }
+  .ladder-row.suggested { background:#20241a; }
+  .tag { font-size:9.5px; font-weight:700; padding:2px 6px; border-radius:4px; letter-spacing:.5px; }
+  .tag.put { background:#3a2323; color:#D08E8E; }
+  .tag.call { background:#1e2f36; color:#7FB0C4; }
+  .stat-row { display:flex; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+  .stat { padding:12px 15px; flex:1; min-width:110px; }
+  .stat-label { font-size:9.5px; letter-spacing:1px; color:#8B9099; margin-bottom:5px; }
+  .stat-value { font-size:16px; font-weight:600; }
+  .trade-row { display:flex; align-items:center; padding:12px 16px; border-top:1px solid #2A2F35; font-size:12.5px; gap:10px; }
+  .trade-row:first-child { border-top:none; }
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb { background:#2A2F35; border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="topnav">
+  <div class="brand">QQQ Options Lab</div>
+  <a class="navlink" href="index.html">Backtester</a>
+  <a class="navlink active" href="calendar-generator.html">Generator</a>
+  <div class="spacer"></div>
+  <div class="spot mono" id="navSpot">loading...</div>
+</div>
+<div id="main"></div>
+
+<script>
+/* ---------- Pricing math (shared with backtester) ---------- */
+function erf(x){var sign=x<0?-1:1;x=Math.abs(x);var a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;var t=1/(1+p*x);var y=1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);return sign*y;}
+function normCdf(x){return 0.5*(1+erf(x/Math.sqrt(2)));}
+function bsPrice(S,K,T,iv,type){if(T<=0)return type==='call'?Math.max(S-K,0):Math.max(K-S,0);if(iv<=0)iv=0.15;var r=0.045;var d1=(Math.log(S/K)+(r+iv*iv/2)*T)/(iv*Math.sqrt(T));var d2=d1-iv*Math.sqrt(T);if(type==='call')return S*normCdf(d1)-K*Math.exp(-r*T)*normCdf(d2);return K*Math.exp(-r*T)*normCdf(-d2)-S*normCdf(-d1);}
+function daysBetween(a,b){return (new Date(b)-new Date(a))/86400000;}
+function fmtMoney(n){return (n<0?'-$':'$')+Math.abs(n).toFixed(2);}
+function findQuoteInChain(chain, strike, expiration, type){
+  for (var i=0;i<chain.length;i++){ var c=chain[i]; if (Math.abs(c.strike-strike)<0.01 && c.expiration===expiration && c.type===type) return c; }
+  return null;
+}
+function midOfQuote(q){ if(!q) return null; if(q.bid>0 && q.ask>0) return (q.bid+q.ask)/2; if(q.last>0) return q.last; return null; }
+function pickExpirationFor(expirations, refDate, targetDTE){
+  var best=null, bestDiff=Infinity;
+  expirations.forEach(function(e){
+    var dte = daysBetween(refDate, e);
+    if (dte < 0) return;
+    var diff = Math.abs(dte - targetDTE);
+    if (diff < bestDiff){ bestDiff = diff; best = e; }
+  });
+  return best;
+}
+function pickATMStrikeDownside(strikesAvail, spot, grid){
+  grid = grid || 5;
+  var target = Math.floor(spot / grid) * grid;
+  var below = strikesAvail.filter(function(s){ return s <= target; });
+  if (below.length) return Math.max.apply(null, below);
+  var belowSpot = strikesAvail.filter(function(s){ return s <= spot; });
+  if (belowSpot.length) return Math.max.apply(null, belowSpot);
+  return Math.min.apply(null, strikesAvail);
+}
+function roundUpToGrid(value, grid){ grid = grid || 5; return Math.ceil(value / grid) * grid; }
+function detectLocalStrikeGrid(strikesAvail, spot){
+  if (spot < 25) return 0.5;
+  if (spot < 200) return 1;
+  if (spot < 2000) return 5;
+  return 25;
+}
+
+/* ---------- Storage: same IndexedDB as the backtester, so data is shared ---------- */
+var DB_NAME = 'tcl-db', STORE_NAME = 'kv', dbPromise = null;
+function openDB(){
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise(function(resolve, reject){
+    var req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = function(e){ var db=e.target.result; if(!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME); };
+    req.onsuccess = function(e){ resolve(e.target.result); };
+    req.onerror = function(e){ reject(e.target.error); };
+  });
+  return dbPromise;
+}
+function idbGet(key){ return openDB().then(function(db){ return new Promise(function(resolve,reject){ var tx=db.transaction(STORE_NAME,'readonly'); var req=tx.objectStore(STORE_NAME).get(key); req.onsuccess=function(){resolve(req.result);}; req.onerror=function(){reject(req.error);}; }); }); }
+function idbSet(key, value){ return openDB().then(function(db){ return new Promise(function(resolve,reject){ var tx=db.transaction(STORE_NAME,'readwrite'); tx.objectStore(STORE_NAME).put(value, key); tx.oncomplete=function(){resolve(true);}; tx.onerror=function(){reject(tx.error);}; }); }); }
+function idbDelete(key){ return openDB().then(function(db){ return new Promise(function(resolve,reject){ var tx=db.transaction(STORE_NAME,'readwrite'); tx.objectStore(STORE_NAME).delete(key); tx.oncomplete=function(){resolve(true);}; tx.onerror=function(){reject(tx.error);}; }); }); }
+function loadIndex(){ return idbGet('index').then(function(v){ return v || []; }); }
+function saveIndex(dates){ return idbSet('index', dates); }
+function loadSnapshot(date){ return idbGet('snap:'+date); }
+function saveSnapshotRaw(date, data){ return idbSet('snap:'+date, data); }
+function loadConfigStore(){ return idbGet('config'); }
+function loadPaperTrades(){ return idbGet('papertrades').then(function(v){ return v || []; }); }
+function savePaperTrades(list){ return idbSet('papertrades', list); }
+function loadLiveProxyUrl(){ return idbGet('liveProxyUrl').then(function(v){ return v || ''; }); }
+function saveLiveProxyUrl(url){ return idbSet('liveProxyUrl', url); }
+
+var state = { snapshots: [], snapshotCache: {}, nearExp:null, farExp:null, cushion:5, paperTrades:[],
+  liveProxyUrl:'', liveOn:false, liveExpirations:[], liveSnap:null, liveError:null, liveLastFetch:null };
+
+async function saveOneSnapshotG(parsed){
+  if (!parsed || !parsed.date || parsed.spot == null || isNaN(parsed.spot) || !Array.isArray(parsed.chain) || !parsed.chain.length) return false;
+  await saveSnapshotRaw(parsed.date, parsed);
+  var dates = await loadIndex();
+  if (dates.indexOf(parsed.date) === -1){ dates.push(parsed.date); await saveIndex(dates); }
+  var exps = Array.from(new Set(parsed.chain.map(function(c){return c.expiration;}))).sort();
+  state.snapshots = state.snapshots.filter(function(s){return s.date !== parsed.date;});
+  state.snapshots.push({date:parsed.date, spot:parsed.spot, expirations:exps});
+  state.snapshots.sort(function(a,b){ return new Date(a.date)-new Date(b.date); });
+  state.snapshotCache[parsed.date] = parsed;
+  return true;
+}
+
+async function autoSyncFromGithub(){
+  var cfg = await loadConfigStore();
+  var repo = cfg && cfg.githubRepo ? cfg.githubRepo.trim() : '';
+  if (!repo) return { synced:false };
+  var branch = (cfg.githubBranch || 'main').trim() || 'main';
+  var base = 'https://raw.githubusercontent.com/'+repo+'/'+branch+'/snapshots/';
+  try {
+    var idxResp = await fetch(base+'index.json?_='+Date.now());
+    if (!idxResp.ok) return { synced:false, error:'status '+idxResp.status };
+    var stems = await idxResp.json();
+    if (!Array.isArray(stems)) return { synced:false };
+    var have = new Set(state.snapshots.map(function(s){ return s.date.replace(/:/g,'-'); }));
+    var toFetch = stems.filter(function(d){ return !have.has(d); });
+    var fetched = 0;
+    for (var i=0;i<toFetch.length;i++){
+      var r = await fetch(base+'qqq_'+toFetch[i]+'.json?_='+Date.now());
+      if (!r.ok) continue;
+      var snap = await r.json();
+      if (await saveOneSnapshotG(snap)) fetched++;
+    }
+    return { synced:true, fetched:fetched };
+  } catch(err){
+    return { synced:false, error:String(err.message||err) };
+  }
+}
+
+async function init(){
+  var dates = await loadIndex();
+  for (var i=0;i<dates.length;i++){
+    var snap = await loadSnapshot(dates[i]);
+    if (snap){
+      state.snapshotCache[dates[i]] = snap;
+      var exps = Array.from(new Set(snap.chain.map(function(c){return c.expiration;}))).sort();
+      state.snapshots.push({date:dates[i], spot:snap.spot, expirations:exps});
+    }
+  }
+  state.snapshots.sort(function(a,b){ return new Date(a.date)-new Date(b.date); });
+  state.paperTrades = await loadPaperTrades();
+  state.liveProxyUrl = await loadLiveProxyUrl();
+  if (state.snapshots.length){
+    var latest = state.snapshots[state.snapshots.length-1];
+    var exps = latest.expirations;
+    if (exps.length >= 2){ state.nearExp = exps[0]; state.farExp = exps[1]; }
+  }
+  render();
+
+  var syncResult = await autoSyncFromGithub();
+  if (syncResult.synced && syncResult.fetched > 0){
+    if (state.snapshots.length){
+      var latest2 = state.snapshots[state.snapshots.length-1];
+      if (!state.nearExp || latest2.expirations.indexOf(state.nearExp) === -1){
+        var exps2 = latest2.expirations;
+        if (exps2.length >= 2){ state.nearExp = exps2[0]; state.farExp = exps2[1]; }
+      }
+    }
+    render();
+  }
+}
+
+function latestSnapshot(){
+  // Live data (if on and successfully fetched) takes priority for TODAY's pricing.
+  // Historical comparison always uses the GitHub-synced dataset regardless of live mode.
+  if (state.liveOn && state.liveSnap){
+    return { meta: { date: state.liveSnap.date, spot: state.liveSnap.spot, expirations: state.liveExpirations }, snap: state.liveSnap };
+  }
+  if (!state.snapshots.length) return null;
+  var meta = state.snapshots[state.snapshots.length-1];
+  return { meta:meta, snap:state.snapshotCache[meta.date] };
+}
+
+/* ---------- Core calc: given a snapshot + near/far expiry + cushion, compute the triple calendar ---------- */
+function computeTripleCalendar(snap, nearExp, farExp, cushion){
+  if (!snap || !nearExp || !farExp) return null;
+  var strikesAvail = Array.from(new Set(snap.chain.filter(function(c){return c.expiration===nearExp;}).map(function(c){return c.strike;})));
+  if (!strikesAvail.length) return null;
+  var grid = detectLocalStrikeGrid(strikesAvail, snap.spot);
+  var atmStrike = pickATMStrikeDownside(strikesAvail, snap.spot, grid);
+  var atmCallQ = findQuoteInChain(snap.chain, atmStrike, nearExp, 'call');
+  var atmPutQ = findQuoteInChain(snap.chain, atmStrike, nearExp, 'put');
+  var atmCallMid = midOfQuote(atmCallQ), atmPutMid = midOfQuote(atmPutQ);
+  if (atmCallMid == null || atmPutMid == null) return null;
+  var straddle = atmCallMid + atmPutMid;
+  var offset = roundUpToGrid(straddle + cushion, grid);
+  var callStrike = atmStrike + offset, putStrike = atmStrike - offset;
+
+  function nearestAvailable(target){
+    var best=strikesAvail[0], bd=Math.abs(strikesAvail[0]-target);
+    strikesAvail.forEach(function(s){ var d=Math.abs(s-target); if(d<bd){bd=d;best=s;} });
+    return best;
+  }
+  callStrike = nearestAvailable(callStrike);
+  putStrike = nearestAvailable(putStrike);
+
+  var legs = [
+    { name:'put', strike:putStrike },
+    { name:'atm_put', strike:atmStrike },
+    { name:'call', strike:callStrike }
+  ];
+  var totalDebit = 0;
+  legs.forEach(function(leg){
+    var type = leg.name==='call' ? 'call' : 'put';
+    var nearQ = findQuoteInChain(snap.chain, leg.strike, nearExp, type);
+    var farQ = findQuoteInChain(snap.chain, leg.strike, farExp, type);
+    var nearMid = midOfQuote(nearQ), farMid = midOfQuote(farQ);
+    leg.type = type; leg.nearMid = nearMid; leg.farMid = farMid;
+    leg.debit = (farMid==null?0:farMid) - (nearMid==null?0:nearMid);
+    totalDebit += leg.debit;
+  });
+
+  return { grid:grid, atmStrike:atmStrike, straddle:straddle, cushion:cushion, offset:offset,
+    callStrike:callStrike, putStrike:putStrike, legs:legs, totalDebit:totalDebit, strikesAvail:strikesAvail };
+}
+
+/* ---------- Historical comparison: same DTE pair, replicated on every stored day ---------- */
+function historicalDebitSeries(nearExp, farExp, cushion){
+  var latest = latestSnapshot();
+  if (!latest) return [];
+  var nearDTE = daysBetween(latest.meta.date, nearExp);
+  var farDTE = daysBetween(latest.meta.date, farExp);
+  var series = [];
+  state.snapshots.forEach(function(meta){
+    var snap = state.snapshotCache[meta.date];
+    var nExp = pickExpirationFor(meta.expirations, meta.date, nearDTE);
+    var fExp = pickExpirationFor(meta.expirations, meta.date, farDTE);
+    if (!nExp || !fExp || nExp === fExp) return;
+    var built = computeTripleCalendar(snap, nExp, fExp, cushion);
+    if (built) series.push({ date: meta.date, debit: built.totalDebit });
+  });
+  return series;
+}
+
+/* ---------- Live data via Cloudflare Worker proxy (bypasses CORS, polls Yahoo directly) ---------- */
+function yahooQuoteToChainRows(json, expDateStr){
+  var result = json && json.optionChain && json.optionChain.result && json.optionChain.result[0];
+  if (!result) return [];
+  var rows = [];
+  var opt = result.options && result.options[0];
+  if (!opt) return [];
+  ['calls','puts'].forEach(function(key){
+    var type = key === 'calls' ? 'call' : 'put';
+    (opt[key] || []).forEach(function(o){
+      rows.push({
+        expiration: expDateStr, type: type, strike: o.strike,
+        bid: o.bid || 0, ask: o.ask || 0, last: o.lastPrice || 0,
+        iv: o.impliedVolatility || 0, volume: o.volume || 0, openInterest: o.openInterest || 0
+      });
+    });
+  });
+  return rows;
+}
+function epochToDateStr(epoch){
+  var d = new Date(epoch * 1000);
+  return d.toISOString().slice(0,10);
+}
+async function fetchLiveSnapshot(){
+  var base = state.liveProxyUrl;
+  if (!base) { state.liveError = 'Set a live proxy URL first.'; return; }
+  try {
+    var r1 = await fetch(base + (base.indexOf('?')>=0?'&':'?') + 'symbol=QQQ&_=' + Date.now());
+    if (!r1.ok) throw new Error('Proxy returned ' + r1.status);
+    var d1 = await r1.json();
+    var result1 = d1.optionChain && d1.optionChain.result && d1.optionChain.result[0];
+    if (!result1) throw new Error('Unexpected response shape from proxy.');
+    var spot = result1.quote.regularMarketPrice;
+    var expEpochs = result1.expirationDates || [];
+    var expDateStrs = expEpochs.map(epochToDateStr);
+    state.liveExpirations = expDateStrs;
+
+    if (!state.nearExp || expDateStrs.indexOf(state.nearExp) === -1) state.nearExp = expDateStrs[0];
+    if (!state.farExp || expDateStrs.indexOf(state.farExp) === -1) state.farExp = expDateStrs[Math.min(1, expDateStrs.length-1)];
+
+    var nearEpoch = expEpochs[expDateStrs.indexOf(state.nearExp)];
+    var farEpoch = expEpochs[expDateStrs.indexOf(state.farExp)];
+
+    var chain = yahooQuoteToChainRows(d1, epochToDateStr(nearEpoch));
+    if (farEpoch !== nearEpoch){
+      var r2 = await fetch(base + (base.indexOf('?')>=0?'&':'?') + 'symbol=QQQ&date=' + farEpoch + '&_=' + Date.now());
+      if (r2.ok){
+        var d2 = await r2.json();
+        chain = chain.concat(yahooQuoteToChainRows(d2, epochToDateStr(farEpoch)));
+      }
+    }
+
+    state.liveSnap = { ticker:'QQQ', date: new Date().toISOString().slice(0,16).replace('T','T'), spot: spot, chain: chain };
+    state.liveError = null;
+    state.liveLastFetch = new Date();
+  } catch (err) {
+    state.liveError = String(err.message || err);
+  }
+}
+
+var livePollHandle = null;
+function startLivePolling(){
+  stopLivePolling();
+  fetchLiveSnapshot().then(render);
+  livePollHandle = setInterval(function(){ fetchLiveSnapshot().then(render); }, 8000);
+}
+function stopLivePolling(){
+  if (livePollHandle){ clearInterval(livePollHandle); livePollHandle = null; }
+}
+
+/* ---------- UI ---------- */
+function render(){
+  document.getElementById('navSpot').textContent = state.snapshots.length ? ('QQQ $'+state.snapshots[state.snapshots.length-1].spot.toFixed(2)) : '--';
+  var main = document.getElementById('main');
+  main.innerHTML = renderPage();
+  wireEvents();
+}
+
+function renderPage(){
+  var liveCard = renderLiveCard();
+
+  if (!state.snapshots.length && !(state.liveOn && state.liveSnap)){
+    return '<div class="eyebrow">GENERATOR</div><div class="h1 display">Triple Calendar Generator</div>'+
+      liveCard+
+      '<div class="card empty" style="margin-top:16px;">No data yet. Turn on Live above, or go to the Backtester tab and sync from GitHub / upload data for historical mode.</div>';
+  }
+  var latest = latestSnapshot();
+  if (!latest){
+    return '<div class="eyebrow">GENERATOR</div><div class="h1 display">Triple Calendar Generator</div>'+liveCard;
+  }
+  var exps = latest.meta.expirations;
+  var expOptions = exps.map(function(e){
+    var dte = Math.round(daysBetween(latest.meta.date, e));
+    return { value:e, label:e+' \u00b7 '+dte+'d' };
+  });
+
+  var built = computeTripleCalendar(latest.snap, state.nearExp, state.farExp, state.cushion);
+
+  return ''+
+  '<div class="eyebrow">GENERATOR'+(state.liveOn && state.liveSnap ? ' &middot; <span style="color:#9FBF8F;">LIVE</span>' : '')+'</div>'+
+  '<div class="h1 display">Triple Calendar Generator</div>'+
+  '<div class="desc">Spot $'+latest.snap.spot.toFixed(2)+' &middot; data as of '+latest.meta.date+'. Pick a near and far expiration &mdash; strikes and pricing update automatically.</div>'+
+  liveCard+
+
+  '<div class="card" style="padding:18px;margin-bottom:18px;">'+
+    '<div class="row-line">'+
+      selectField('Sell (near)', 'nearExpSelect', expOptions, state.nearExp)+
+      selectField('Buy (far)', 'farExpSelect', expOptions, state.farExp)+
+      '<div><div class="field-label">CUSHION ($)</div><input type="number" step="0.5" id="cushionInput" value="'+state.cushion+'" style="width:80px;"></div>'+
+      '<button class="primary" id="refreshBtn">Refresh data</button>'+
+    '</div>'+
+    (built ? '<div style="margin-top:14px;font-size:12.5px;color:#8B9099;">Straddle <span class="mono" style="color:#E9E6DE;">$'+built.straddle.toFixed(2)+'</span> + $'+built.cushion.toFixed(2)+' cushion &rarr; &plusmn;'+built.offset.toFixed(2)+' &mdash; '+
+        '<span class="tag put">PUT</span> <span class="mono">'+built.putStrike+'</span> &nbsp; '+
+        '<span class="tag put">ATM PUT</span> <span class="mono">'+built.atmStrike+'</span> &nbsp; '+
+        '<span class="tag call">CALL</span> <span class="mono">'+built.callStrike+'</span></div>' : '<div style="margin-top:14px;color:#D08E8E;font-size:12.5px;">Could not price this near/far pair &mdash; try different expirations.</div>')+
+  '</div>'+
+
+  (built ? renderDebitPanel(built) + renderLadder(built, latest.snap) + renderHistoryPanel() + renderActions(built) : '')+
+
+  '<div class="section-label mono">PAPER TRADES ('+state.paperTrades.length+')</div>'+
+  renderPaperTrades();
+}
+
+function renderLiveCard(){
+  var statusLine;
+  if (!state.liveProxyUrl){
+    statusLine = '<span style="color:#8B9099;">Paste your Cloudflare Worker URL, then hit Go Live.</span>';
+  } else if (state.liveError){
+    statusLine = '<span style="color:#D08E8E;">'+state.liveError+'</span>';
+  } else if (state.liveOn && state.liveLastFetch){
+    statusLine = '<span style="color:#9FBF8F;">&#9679; LIVE</span> <span style="color:#8B9099;">&mdash; last update '+state.liveLastFetch.toLocaleTimeString()+' &middot; refreshing every 8s</span>';
+  } else {
+    statusLine = '<span style="color:#8B9099;">Off &mdash; using last synced GitHub snapshot for pricing.</span>';
+  }
+  return ''+
+  '<div class="card" style="padding:16px 18px;margin-bottom:18px;">'+
+    '<div class="row-line">'+
+      '<div style="flex:1;min-width:220px;"><div class="field-label">LIVE PROXY URL (Cloudflare Worker)</div>'+
+      '<input type="text" id="liveProxyInput" value="'+(state.liveProxyUrl||'')+'" placeholder="https://your-worker.yourname.workers.dev" style="width:100%;"></div>'+
+      '<button class="'+(state.liveOn?'primary':'ghost')+'" id="liveToggleBtn">'+(state.liveOn?'Stop live':'Go live')+'</button>'+
+    '</div>'+
+    '<div style="margin-top:10px;font-size:12px;">'+statusLine+'</div>'+
+  '</div>';
+}
+
+function selectField(label, id, options, selected){
+  var opts = options.map(function(o){ return '<option value="'+o.value+'"'+(o.value===selected?' selected':'')+'>'+o.label+'</option>'; }).join('');
+  return '<div><div class="field-label">'+label.toUpperCase()+'</div><select id="'+id+'">'+opts+'</select></div>';
+}
+
+function renderDebitPanel(built){
+  var stats = [
+    ['TOTAL DEBIT', fmtMoney(built.totalDebit), '#C9A227'],
+    ['PER SET (x100)', fmtMoney(built.totalDebit*100), '#E9E6DE'],
+    ['ATM STRIKE', String(built.atmStrike), '#E9E6DE'],
+    ['STRIKE GRID', '$'+built.grid, '#8B9099']
+  ].map(function(s){ return '<div class="card stat"><div class="stat-label mono">'+s[0]+'</div><div class="stat-value mono" style="color:'+s[2]+'">'+s[1]+'</div></div>'; }).join('');
+  return '<div class="stat-row">'+stats+'</div>';
+}
+
+function renderLadder(built, snap){
+  var rows = built.strikesAvail.slice().sort(function(a,b){return b-a;}).filter(function(s){
+    return Math.abs(s - built.atmStrike) <= built.offset * 1.6;
+  }).map(function(strike){
+    var isSuggested = [built.putStrike, built.atmStrike, built.callStrike].indexOf(strike) !== -1;
+    var type = strike >= built.atmStrike ? 'call' : 'put';
+    var nearQ = findQuoteInChain(snap.chain, strike, state.nearExp, type);
+    var farQ = findQuoteInChain(snap.chain, strike, state.farExp, type);
+    var nearMid = midOfQuote(nearQ), farMid = midOfQuote(farQ);
+    var debit = (farMid==null?0:farMid) - (nearMid==null?0:nearMid);
+    return '<div class="ladder-row'+(isSuggested?' suggested':'')+'">'+
+      '<span class="tag '+type+'" style="width:36px;text-align:center;">'+(type==='call'?'C':'P')+'</span>'+
+      '<span class="mono" style="width:60px;margin-left:8px;">'+strike+'</span>'+
+      '<span class="mono" style="flex:1;color:#8B9099;">near '+(nearMid!=null?nearMid.toFixed(2):'n/a')+' / far '+(farMid!=null?farMid.toFixed(2):'n/a')+'</span>'+
+      '<span class="mono" style="width:70px;text-align:right;color:'+(debit>=0?'#D08E8E':'#9FBF8F')+';">'+fmtMoney(debit)+'</span>'+
+      (isSuggested ? '<span class="tag call" style="margin-left:8px;background:#2a2410;color:#C9A227;">SUGGESTED</span>' : '')+
+    '</div>';
+  }).join('');
+  return '<div class="section-label mono">STRIKE LADDER</div><div class="card" style="margin-bottom:18px;max-height:420px;overflow:auto;">'+rows+'</div>';
+}
+
+var historyWindow = 30;
+
+function renderHistoryPanel(){
+  var series = historicalDebitSeries(state.nearExp, state.farExp, state.cushion);
+  if (series.length < 2){
+    return '<div class="section-label mono">PRICE CHECK VS HISTORY</div><div class="card empty" style="margin-bottom:18px;">Not enough historical snapshots with this near/far pairing yet. Sync more data to build this comparison.</div>';
+  }
+  var windowed = series.slice(-historyWindow);
+  var today = series[series.length-1];
+  var others = windowed.slice(0, windowed.length-1);
+  var lower = others.filter(function(s){ return s.debit < today.debit; }).length;
+  var pct = others.length ? Math.round(lower/others.length*100) : 0;
+  var vals = windowed.map(function(s){return s.debit;});
+  var minV = Math.min.apply(null, vals), maxV = Math.max.apply(null, vals);
+  var sorted = vals.slice().sort(function(a,b){return a-b;});
+  var median = sorted[Math.floor(sorted.length/2)];
+  var label = pct >= 70 ? 'EXPENSIVE' : (pct <= 30 ? 'CHEAP' : 'FAIR');
+  var labelColor = pct >= 70 ? '#D08E8E' : (pct <= 30 ? '#9FBF8F' : '#8B9099');
+
+  return ''+
+  '<div class="section-label mono">PRICE CHECK VS HISTORY</div>'+
+  '<div class="card" style="padding:16px 18px;margin-bottom:18px;">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'+
+      '<span class="tag" style="background:#20241a;color:'+labelColor+';">'+label+'</span>'+
+      '<span style="font-size:12.5px;color:#8B9099;">today\'s cost is higher than '+pct+'% of the last '+others.length+' comparable days</span>'+
+      '<div style="margin-left:auto;display:flex;gap:6px;">'+
+        '<button class="ghost'+(historyWindow===10?' active':'')+'" data-window="10" id="win10">10d</button>'+
+        '<button class="ghost'+(historyWindow===30?' active':'')+'" data-window="30" id="win30">30d</button>'+
+      '</div>'+
+    '</div>'+
+    '<div style="height:70px;">'+debitSparkline(windowed)+'</div>'+
+    '<div style="display:flex;gap:16px;margin-top:10px;font-size:11.5px;color:#8B9099;">'+
+      '<div>Today <span class="mono" style="color:#E9E6DE;">'+fmtMoney(today.debit)+'</span></div>'+
+      '<div>Range <span class="mono" style="color:#E9E6DE;">'+fmtMoney(minV)+' &ndash; '+fmtMoney(maxV)+'</span></div>'+
+      '<div>Median <span class="mono" style="color:#E9E6DE;">'+fmtMoney(median)+'</span></div>'+
+    '</div>'+
+  '</div>';
+}
+
+function debitSparkline(series){
+  var w=1000, h=70, padL=6, padR=6, padT=8, padB=8;
+  var vals = series.map(function(s){return s.debit;});
+  var minV = Math.min.apply(null,vals), maxV = Math.max.apply(null,vals);
+  if (minV===maxV){ minV-=1; maxV+=1; }
+  var xStep = (w-padL-padR)/Math.max(1,series.length-1);
+  function xAt(i){ return padL+i*xStep; }
+  function yAt(v){ return padT + (1-(v-minV)/(maxV-minV))*(h-padT-padB); }
+  var pts = series.map(function(s,i){ return xAt(i)+','+yAt(s.debit); }).join(' ');
+  var lastX = xAt(series.length-1), lastY = yAt(series[series.length-1].debit);
+  return '<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:100%;">'+
+    '<polyline points="'+pts+'" fill="none" stroke="#C9A227" stroke-width="2"/>'+
+    '<circle cx="'+lastX+'" cy="'+lastY+'" r="4" fill="#C9A227"/>'+
+  '</svg>';
+}
+
+function optionStratUrl(built){
+  // Best-effort deep link -- OptionStrat's exact leg-encoding query format isn't publicly documented,
+  // so this opens the custom strategy builder pre-loaded on QQQ; you may need to re-enter the specific
+  // strikes/expirations shown above once there.
+  return 'https://optionstrat.com/build/custom/QQQ';
+}
+
+function renderActions(built){
+  return '<div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;">'+
+    '<a class="ghost" style="text-decoration:none;display:inline-block;" href="'+optionStratUrl(built)+'" target="_blank" rel="noopener">Open in OptionStrat &#8599;</a>'+
+    '<button class="primary" id="saveTradeBtn">Save as paper trade</button>'+
+  '</div>';
+}
+
+function renderPaperTrades(){
+  if (!state.paperTrades.length) return '<div class="card empty">No paper trades saved yet.</div>';
+  var latest = latestSnapshot();
+  var rows = state.paperTrades.map(function(t, idx){
+    var current = latest ? computeTripleCalendarFromLegs(latest.snap, t) : null;
+    var pnl = current != null ? (current - t.entryDebit)*100 : null;
+    return '<div class="trade-row">'+
+      '<div style="width:110px;color:#8B9099;font-size:11.5px;">'+t.entryDate+'</div>'+
+      '<div class="mono" style="flex:1;">P'+t.putStrike+' / P'+t.atmStrike+' / C'+t.callStrike+' &middot; sell '+t.nearExp+' / buy '+t.farExp+'</div>'+
+      '<div class="mono" style="width:80px;color:#8B9099;">entry '+fmtMoney(t.entryDebit*100)+'</div>'+
+      '<div class="mono" style="width:80px;text-align:right;color:'+(pnl==null?'#8B9099':(pnl>=0?'#C9A227':'#B85C56'))+';">'+(pnl==null?'n/a':fmtMoney(pnl))+'</div>'+
+      '<button class="ghost" data-idx="'+idx+'" style="padding:5px 10px;">Delete</button>'+
+    '</div>';
+  }).join('');
+  return '<div class="card">'+rows+'</div>';
+}
+
+function computeTripleCalendarFromLegs(snap, t){
+  var legs = [
+    {strike:t.putStrike, type:'put'}, {strike:t.atmStrike, type:'put'}, {strike:t.callStrike, type:'call'}
+  ];
+  var value = 0, anyMissing = false;
+  legs.forEach(function(leg){
+    var nearQ = findQuoteInChain(snap.chain, leg.strike, t.nearExp, leg.type);
+    var farQ = findQuoteInChain(snap.chain, leg.strike, t.farExp, leg.type);
+    var nearMid = midOfQuote(nearQ), farMid = midOfQuote(farQ);
+    if (nearMid==null || farMid==null) anyMissing = true;
+    value += (farMid==null?0:farMid) - (nearMid==null?0:nearMid);
+  });
+  return value;
+}
+
+function wireEvents(){
+  var nearSel = document.getElementById('nearExpSelect');
+  if (nearSel) nearSel.addEventListener('change', function(){ state.nearExp = nearSel.value; render(); });
+  var farSel = document.getElementById('farExpSelect');
+  if (farSel) farSel.addEventListener('change', function(){ state.farExp = farSel.value; render(); });
+  var cushionInput = document.getElementById('cushionInput');
+  if (cushionInput) cushionInput.addEventListener('change', function(){ state.cushion = parseFloat(cushionInput.value)||0; render(); });
+  var refreshBtn = document.getElementById('refreshBtn');
+  if (refreshBtn) refreshBtn.addEventListener('click', function(){
+    if (state.liveOn) fetchLiveSnapshot().then(render); else init();
+  });
+  var liveProxyInput = document.getElementById('liveProxyInput');
+  if (liveProxyInput) liveProxyInput.addEventListener('change', async function(){
+    state.liveProxyUrl = liveProxyInput.value.trim();
+    await saveLiveProxyUrl(state.liveProxyUrl);
+  });
+  var liveToggleBtn = document.getElementById('liveToggleBtn');
+  if (liveToggleBtn) liveToggleBtn.addEventListener('click', function(){
+    if (state.liveOn){
+      state.liveOn = false;
+      stopLivePolling();
+      render();
+    } else {
+      if (!state.liveProxyUrl){ state.liveError = 'Enter a proxy URL first.'; render(); return; }
+      state.liveOn = true;
+      startLivePolling();
+    }
+  });
+  var win10 = document.getElementById('win10');
+  if (win10) win10.addEventListener('click', function(){ historyWindow = 10; render(); });
+  var win30 = document.getElementById('win30');
+  if (win30) win30.addEventListener('click', function(){ historyWindow = 30; render(); });
+  var saveBtn = document.getElementById('saveTradeBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async function(){
+    var latest = latestSnapshot();
+    var built = computeTripleCalendar(latest.snap, state.nearExp, state.farExp, state.cushion);
+    if (!built) return;
+    state.paperTrades.push({
+      entryDate: latest.meta.date, nearExp: state.nearExp, farExp: state.farExp,
+      putStrike: built.putStrike, atmStrike: built.atmStrike, callStrike: built.callStrike,
+      entryDebit: built.totalDebit
+    });
+    await savePaperTrades(state.paperTrades);
+    render();
+  });
+  document.querySelectorAll('.trade-row .ghost').forEach(function(btn){
+    btn.addEventListener('click', async function(){
+      var idx = parseInt(btn.getAttribute('data-idx'),10);
+      state.paperTrades.splice(idx,1);
+      await savePaperTrades(state.paperTrades);
+      render();
+    });
+  });
+}
+
+init();
+</script>
+</body>
+</html>

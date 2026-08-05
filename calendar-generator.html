@@ -177,7 +177,7 @@ async function init(){
   }
   state.snapshots.sort(function(a,b){ return new Date(a.date)-new Date(b.date); });
   state.paperTrades = await loadPaperTrades();
-  state.liveProxyUrl = await loadLiveProxyUrl();
+  state.liveProxyUrl = normalizeProxyUrl(await loadLiveProxyUrl());
   if (state.snapshots.length){
     var latest = state.snapshots[state.snapshots.length-1];
     var exps = latest.expirations;
@@ -293,6 +293,13 @@ function epochToDateStr(epoch){
   var d = new Date(epoch * 1000);
   return d.toISOString().slice(0,10);
 }
+function normalizeProxyUrl(u){
+  u = (u || '').trim();
+  if (!u) return u;
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  return u.replace(/\/+$/, ''); // strip trailing slash(es) too
+}
+
 async function fetchLiveSnapshot(){
   var base = state.liveProxyUrl;
   if (!base) { state.liveError = 'Set a live proxy URL first.'; return; }
@@ -313,7 +320,19 @@ async function fetchLiveSnapshot(){
     var nearEpoch = expEpochs[expDateStrs.indexOf(state.nearExp)];
     var farEpoch = expEpochs[expDateStrs.indexOf(state.farExp)];
 
-    var chain = yahooQuoteToChainRows(d1, epochToDateStr(nearEpoch));
+    // d1 (the no-date request) only contains the correct prices for Yahoo's DEFAULT nearest
+    // expiration (expEpochs[0]). If the user picked a different near expiry, we must fetch
+    // that expiry's own chain explicitly -- otherwise we'd mislabel the default chain's prices
+    // as belonging to the selected expiry, which silently breaks recalculation on expiry change.
+    var chain;
+    if (nearEpoch === expEpochs[0]){
+      chain = yahooQuoteToChainRows(d1, epochToDateStr(nearEpoch));
+    } else {
+      var rNear = await fetch(base + (base.indexOf('?')>=0?'&':'?') + 'symbol=QQQ&date=' + nearEpoch + '&_=' + Date.now());
+      if (!rNear.ok) throw new Error('Proxy returned ' + rNear.status + ' fetching the near expiry.');
+      var dNear = await rNear.json();
+      chain = yahooQuoteToChainRows(dNear, epochToDateStr(nearEpoch));
+    }
     if (farEpoch !== nearEpoch){
       var r2 = await fetch(base + (base.indexOf('?')>=0?'&':'?') + 'symbol=QQQ&date=' + farEpoch + '&_=' + Date.now());
       if (r2.ok){
@@ -565,7 +584,8 @@ function wireEvents(){
   });
   var liveProxyInput = document.getElementById('liveProxyInput');
   if (liveProxyInput) liveProxyInput.addEventListener('change', async function(){
-    state.liveProxyUrl = liveProxyInput.value.trim();
+    state.liveProxyUrl = normalizeProxyUrl(liveProxyInput.value);
+    liveProxyInput.value = state.liveProxyUrl;
     await saveLiveProxyUrl(state.liveProxyUrl);
   });
   var liveToggleBtn = document.getElementById('liveToggleBtn');

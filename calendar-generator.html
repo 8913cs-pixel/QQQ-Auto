@@ -454,7 +454,7 @@ function renderLadder(built, snap){
     return Math.abs(s - built.atmStrike) <= built.offset * 1.6;
   }).map(function(strike){
     var isSuggested = [built.putStrike, built.atmStrike, built.callStrike].indexOf(strike) !== -1;
-    var type = strike >= built.atmStrike ? 'call' : 'put';
+    var type = strike > built.atmStrike ? 'call' : 'put';
     var nearQ = findQuoteInChain(snap.chain, strike, state.nearExp, type);
     var farQ = findQuoteInChain(snap.chain, strike, state.farExp, type);
     var nearMid = midOfQuote(nearQ), farMid = midOfQuote(farQ);
